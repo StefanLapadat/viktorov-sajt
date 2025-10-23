@@ -1,10 +1,180 @@
 <!DOCTYPE html>
 <html>
 <head>
+<style>
+  html,body { height:100%; margin:0; display:flex; align-items:center; justify-content:center; background:#111; color:#eee; }
+  #container { width:90vw; height:80vh; max-width:1000px; max-height:800px; border:6px solid #222; box-shadow:0 10px 40px rgba(0,0,0,0.6); background:linear-gradient(#0b1020,#071026); }
+  canvas { display:block; width:100%; height:100%; }
+  .ui { position:fixed; left:12px; bottom:12px; font-family:system-ui; font-size:14px; color:#ddd; }
+  .ui small { color:#999; display:block; margin-top:6px; }
+</style>
 </head>
 <body>
-	Viktor pro u fortnajtu, ima trece mesto iz decije olimpijade. 
-	<img src="./WIN_20251023_21_45_49_Pro.jpg"/>
+	<!-- Viktor pro u fortnajtu, ima trece mesto iz decije olimpijade.  -->
+	<!-- <img src="./WIN_20251023_21_45_49_Pro.jpg"/> -->
+
+	<div id="container">
+		<canvas id="c"></canvas>
+	  </div>
+	
+	  <div class="ui">
+		<div>Click canvas to give the ball a random kick.</div>
+		<small>Gravity, bounce and friction are simulated.</small>
+	  </div>
+	
+	<script>
+	(() => {
+	  const canvas = document.getElementById('c');
+	  const ctx = canvas.getContext('2d');
+	
+	  // device pixel ratio handling for crisp canvas
+	  function resizeCanvas() {
+		const ratio = window.devicePixelRatio || 1;
+		const rect = canvas.getBoundingClientRect();
+		canvas.width = Math.round(rect.width * ratio);
+		canvas.height = Math.round(rect.height * ratio);
+		ctx.setTransform(ratio, 0, 0, ratio, 0, 0); // scale drawing to CSS pixels
+	  }
+	
+	  // Ball state
+	  const ball = {
+		x: 100,
+		y: 100,
+		vx: 220,   // pixels/sec
+		vy: 0,
+		r: 28,     // radius in CSS pixels
+		color: '#ffcc33'
+	  };
+	
+	  // physics params
+	  const gravity = 980;         // px/sec^2 (approximate)
+	  const restitution = 0.75;    // bounce factor (0..1)
+	  const friction = 0.995;      // horizontal damping on "ground" contact (0..1)
+	  const dtMax = 0.032;         // prevent huge dt steps (s)
+	
+	  let lastTs = performance.now();
+	
+	  function step(now) {
+		const dtRaw = (now - lastTs) / 1000;
+		lastTs = now;
+		// clamp dt
+		const dt = Math.min(dtRaw, dtMax);
+	
+		// integrate velocity
+		ball.vy += gravity * dt;
+	
+		// integrate position
+		ball.x += ball.vx * dt;
+		ball.y += ball.vy * dt;
+	
+		// canvas bounds in CSS pixels
+		const w = canvas.clientWidth;
+		const h = canvas.clientHeight;
+	
+		// left/right collisions
+		if (ball.x - ball.r < 0) {
+		  ball.x = ball.r;
+		  ball.vx = -ball.vx * restitution;
+		} else if (ball.x + ball.r > w) {
+		  ball.x = w - ball.r;
+		  ball.vx = -ball.vx * restitution;
+		}
+	
+		// top/bottom collisions
+		if (ball.y - ball.r < 0) {
+		  ball.y = ball.r;
+		  ball.vy = -ball.vy * restitution;
+		} else if (ball.y + ball.r > h) {
+		  ball.y = h - ball.r;
+		  ball.vy = -ball.vy * restitution;
+	
+		  // apply friction to horizontal velocity when on the ground
+		  ball.vx *= friction;
+	
+		  // very small velocities -> zero (to eventually rest)
+		  if (Math.abs(ball.vy) < 1) ball.vy = 0;
+		  if (Math.abs(ball.vx) < 0.1) ball.vx = 0;
+		}
+	
+		draw();
+		requestAnimationFrame(step);
+	  }
+	
+	  function draw() {
+		const w = canvas.clientWidth;
+		const h = canvas.clientHeight;
+	
+		// clear
+		ctx.clearRect(0, 0, w, h);
+	
+		// subtle grid / background
+		const grd = ctx.createLinearGradient(0,0,0,h);
+		grd.addColorStop(0, 'rgba(255,255,255,0.02)');
+		grd.addColorStop(1, 'rgba(0,0,0,0.15)');
+		ctx.fillStyle = grd;
+		ctx.fillRect(0, 0, w, h);
+	
+		// floor shadow
+		const shadowY = h - 10;
+		ctx.beginPath();
+		ctx.ellipse(ball.x, shadowY, ball.r * 0.9, ball.r * 0.25, 0, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(0,0,0,0.18)';
+		ctx.fill();
+	
+		// ball
+		ctx.beginPath();
+		ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+		// radial gradient for 3D look
+		const g = ctx.createRadialGradient(ball.x - ball.r*0.4, ball.y - ball.r*0.6, ball.r*0.1, ball.x, ball.y, ball.r);
+		g.addColorStop(0, '#fff9d9');
+		g.addColorStop(0.2, ball.color);
+		g.addColorStop(1, '#b86b00');
+		ctx.fillStyle = g;
+		ctx.fill();
+	
+		// highlight
+		ctx.beginPath();
+		ctx.arc(ball.x - ball.r*0.35, ball.y - ball.r*0.45, ball.r*0.18, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(255,255,255,0.7)';
+		ctx.fill();
+	  }
+	
+	  // window + container resize handling
+	  const ro = new ResizeObserver(() => {
+		// keep ball inside new bounds if resized smaller
+		const prevW = canvas.clientWidth;
+		const prevH = canvas.clientHeight;
+		resizeCanvas();
+	
+		// clamp ball position after resize
+		const w = canvas.clientWidth;
+		const h = canvas.clientHeight;
+		ball.x = Math.min(Math.max(ball.r, ball.x), w - ball.r);
+		ball.y = Math.min(Math.max(ball.r, ball.y), h - ball.r);
+	  });
+	  ro.observe(document.getElementById('container'));
+	  window.addEventListener('resize', resizeCanvas, { passive: true });
+	
+	  // click to "kick" the ball
+	  canvas.addEventListener('click', (e) => {
+		// give random upward and sideways velocity
+		const vxKick = (Math.random() - 0.5) * 800;
+		const vyKick = - (250 + Math.random() * 400);
+		ball.vx += vxKick;
+		ball.vy += vyKick;
+	  });
+	
+	  // init
+	  resizeCanvas();
+	  // position ball near center
+	  ball.x = canvas.clientWidth * 0.35;
+	  ball.y = canvas.clientHeight * 0.2;
+	
+	  // start loop
+	  lastTs = performance.now();
+	  requestAnimationFrame(step);
+	})();
+	</script>
 </body>
 </html>
 
